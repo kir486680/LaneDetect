@@ -35,7 +35,7 @@ double getAverage(vector<double> vector, int nElements) {
 
 Mat LaneDetector::detect_lane(Mat image) {
     Mat org;
-    Mat perspectiveImg = transformProspectives(image);
+    Mat perspectiveImg, invertedPerspectiveMatrix = transformProspectives(image);
     Mat processed= filter_only_yellow_white(image, perspectiveImg);
     vector<Point2f> pts = slidingWindow(processed, Rect(0, 420, 120, 60));
     vector<Point> allPts; //Used for the end polygon at the end.
@@ -196,9 +196,6 @@ Mat LaneDetector::detect_edges(Mat image) {
 }
 
 Mat LaneDetector::transformProspectives(Mat image){
-    
-    int xsize = image.rows;
-    int ysize = image.cols;
 
     Point2f inputQuad[4];
     // Output Quadilateral or World plane coordinates
@@ -237,7 +234,7 @@ Mat LaneDetector::transformProspectives(Mat image){
     
    
     //return output;
-    return dst;
+    return {dst, invertedPerspectiveMatrix};
 }
 vector<Point2f> LaneDetector::slidingWindow(Mat image, Rect window)
 {
