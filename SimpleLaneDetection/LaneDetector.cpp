@@ -34,40 +34,65 @@ double getAverage(vector<double> vector, int nElements) {
 }
 
 Mat LaneDetector::detect_lane(Mat image) {
+    Mat org;
     Mat perspectiveImg = transformProspectives(image);
-    //Mat colorFilteredImage = filter_only_yellow_white(image);
-    //Mat regionOfInterest = crop_region_of_interest(colorFilteredImage);
-    //Mat edgesOnly = detect_edges(regionOfInterest);
-    
-    //vector<Vec4i> lines;
-    //HoughLinesP(edgesOnly, lines, 1, CV_PI/180, 10, 20, 100);
-    
-    //return draw_lines(image, lines);
-    return perspectiveImg;
+    Mat processed= filter_only_yellow_white(image, perspectiveImg);
+    vector<Point2f> pts = slidingWindow(processed, Rect(0, 420, 120, 60));
+    vector<Point> allPts; //Used for the end polygon at the end.
+    vector<Point2f> outPts;
+    perspectiveTransform(pts, outPts, invertedPerspectiveMatrix); //Transform points back into original image space
+    //Draw the points onto the out image
+    for (int i = 0; i < outPts.size() - 1; ++i)
+    {
+        line(org, outPts[i], outPts[i + 1], Scalar(255, 0, 0), 3);
+        allPts.push_back(Point(outPts[i].x, outPts[i].y));
+    }
+
+    allPts.push_back(Point(outPts[outPts.size() - 1].x, outPts[outPts.size() - 1].y));
+
+    Mat out;
+    cvtColor(processed, out, COLOR_GRAY2BGR); //Conver the processing image to color so that we can visualise the lines
+    for (int i = 0; i < pts.size() - 1; ++i) //Draw a line on the processed image
+    line(out, pts[i], pts[i + 1], Scalar(255, 0, 0));
+
+    //Sliding window for the right side
+    pts = slidingWindow(processed, Rect(520, 420, 120, 60));
+    perspectiveTransform(pts, outPts, invertedPerspectiveMatrix);
+
+    //Draw the other lane and append points
+    for (int i = 0; i < outPts.size() - 1; ++i)
+    {
+        line(org, outPts[i], outPts[i + 1], Scalar(0, 0, 255), 3);
+        allPts.push_back(Point(outPts[outPts.size() - i - 1].x, outPts[outPts.size() - i - 1].y));
+    }
+
+    allPts.push_back(Point(outPts[0].x - (outPts.size() - 1) , outPts[0].y));
+
+    for (int i = 0; i < pts.size() - 1; ++i)
+        line(out, pts[i], pts[i + 1], Scalar(0, 0, 255));
+
+    //Create a green-ish overlay
+    vector<vector<Point>> arr;
+    arr.push_back(allPts);
+    Mat overlay = Mat::zeros(org.size(), org.type());
+    fillPoly(overlay, arr, Scalar(0, 255, 100));
+    addWeighted(org, 1, overlay, 0.5, 0, org); //Overlay it
+
+    return org;
 }
 
-Mat LaneDetector::filter_only_yellow_white(Mat image) {
+Mat LaneDetector::filter_only_yellow_white(Mat img, Mat dst) {
+
+    cvtColor(dst, img, COLOR_RGB2GRAY);
+    Mat maskYellow, maskWhite;
+    inRange(img, Scalar(20, 100, 100), Scalar(30, 255, 255), maskYellow);
+    inRange(img, Scalar(150, 150, 150), Scalar(255, 255, 255), maskWhite);
+
+    Mat mask, processed;
+    bitwise_or(maskYellow, maskWhite, mask); //Combine the two masks
+    bitwise_and(img, mask, processed); //Extract what matches
     
-    Mat hlsColorspacedImage;
-    cvtColor(image, hlsColorspacedImage, CV_RGB2HLS);
-    
-    Mat yellowMask;
-    Scalar yellowLower = Scalar(10, 0, 90);
-    Scalar yellowUpper = Scalar(50, 255, 255);
-    inRange(hlsColorspacedImage, yellowLower, yellowUpper, yellowMask);
-    
-    Mat whiteMask;
-    Scalar whiteLower = Scalar(0, 190, 0);
-    Scalar whiteUpper = Scalar(255, 255, 255);
-    inRange(hlsColorspacedImage, whiteLower, whiteUpper, whiteMask);
-    
-    Mat mask;
-    bitwise_or(yellowMask, whiteMask, mask);
-    
-    Mat maskedImage;
-    bitwise_and(image, image, maskedImage, mask);
-    
-    return maskedImage;
+    return processed;
 }
 
 Mat LaneDetector::crop_region_of_interest(Mat image) {
@@ -171,70 +196,97 @@ Mat LaneDetector::detect_edges(Mat image) {
 }
 
 Mat LaneDetector::transformProspectives(Mat image){
+    
     int xsize = image.rows;
     int ysize = image.cols;
-    int imgSize[2] = {xsize, ysize};
-    float bot_width = 0.76;
-    float mid_width = 0.08;
-    float height_pct = 0.62;
-    float bottom_trim = 0.935;
-    float offset = imgSize[0]*.25;
-    //double srcData[4][2] = {{imgSize[1]*(0.5 - mid_width/2), imgSize[0]*height_pct}, {imgSize[1]*(.5 + mid_width/2), imgSize[0]*height_pct}, {imgSize[1]*(.5 + bot_width/2), imgSize[0]*bottom_trim}, {imgSize[1]*(.5 - bot_width/2), imgSize[0]*bottom_trim}};
-  
 
-    //Mat src = Mat(2,4, CV_32FC1, srcData);
-    //double dstArr[4][2] = {{offset, 0}, {imgSize[0]-offset, 0}, {imgSize[0] - offset, imgSize[1]}, {offset, imgSize[1]}};
-    //Mat dst = Mat(2, 4, CV_32FC1, dstArr);
-
-    cout<<xsize<<endl;
-    cout<<ysize<<endl;
     Point2f inputQuad[4];
     // Output Quadilateral or World plane coordinates
     Point2f outputQuad[4];
         
     // Lambda Matrix
-    Mat lambda( 2, 4, CV_32FC1 );
     //Input and Output Image;
     Mat input, output;
     
     
     //Load the image
     // Set the lambda matrix the same type and size as input
-    lambda = Mat::zeros( 3,3, input.type() );
-
-    // The 4 points that select quadilateral on the input , from top-left in clockwise order
-    // These four pts are the sides of the rect box used as input
-    cout<<imgSize[1]*(0.5 - mid_width/2)<<endl;
-    inputQuad[0] = Point2f(imgSize[1]*(0.5 - mid_width/2), imgSize[0]*height_pct);
-    inputQuad[1] = Point2f(imgSize[1]*(0.5 + mid_width/2), imgSize[0]*height_pct);
-    inputQuad[2] = Point2f(imgSize[1]*(0.5 + bot_width/2), imgSize[0]*bottom_trim);
-    inputQuad[3] = Point2f(imgSize[1]*(0.5 - bot_width/2), imgSize[0]*bottom_trim);
-    // The 4 points where the mapping is to be done , from top-left in clockwise order
-    outputQuad[0] = Point2f(offset, 0);
-    outputQuad[1] = Point2f(imgSize[0]-offset, 0);
-    outputQuad[2] = Point2f(imgSize[0] - offset, imgSize[1]);
-    outputQuad[3] = Point2f(offset, imgSize[1]);
-
+    Mat dst(480, 640, CV_8UC3);
+    //For transforming back into original image space Mat invertedPerspectiveMatrix;
+    
     // Get the Perspective Transform Matrix i.e. lambda
     
-    lambda = getPerspectiveTransform(inputQuad, outputQuad);
+    //Mat perspectiveMatrix = getPerspectiveTransform(inputQuad, outputQuad);
+    Point2f srcVertices[4];
+    srcVertices[0] = Point(700, 605);
+    srcVertices[1] = Point(890, 605);
+    srcVertices[2] = Point(1760, 1030);
+    srcVertices[3] = Point(20, 1030);
+
+    Point2f dstVertices[4];
+    dstVertices[0] = Point(0, 0);
+    dstVertices[1] = Point(640, 0);
+    dstVertices[2] = Point(640, 480);
+    dstVertices[3] = Point(0, 480);
+
+    Mat perspectiveMatrix = getPerspectiveTransform(srcVertices, dstVertices);
+    Mat invertedPerspectiveMatrix;
+    invert(perspectiveMatrix, invertedPerspectiveMatrix);
     // Apply the Perspective Transform just found to the src image
-    warpPerspective(image,output,lambda,output.size() );
+    warpPerspective(image, dst, perspectiveMatrix, dst.size(), INTER_LINEAR, BORDER_CONSTANT);
+    
    
     //return output;
-    return output;
+    return dst;
 }
-bool matIsEqual(const cv::Mat mat1, const cv::Mat mat2){
-   // treat two empty mat as identical as well
-   if (mat1.empty() && mat2.empty()) {
-       return true;
-   }
-   // if dimensionality of two mat is not identical, these two mat is not identical
-   if (mat1.cols != mat2.cols || mat1.rows != mat2.rows || mat1.dims != mat2.dims) {
-       return false;
-   }
-   cv::Mat diff;
-   cv::compare(mat1, mat2, diff, cv::CMP_NE);
-   int nz = cv::countNonZero(diff);
-   return nz==0;
+vector<Point2f> LaneDetector::slidingWindow(Mat image, Rect window)
+{
+    vector<Point2f> points;
+    const Size imgSize = image.size();
+    bool shouldBreak = false;
+    
+    while (true)
+    {
+        float currentX = window.x + window.width * 0.5f;
+        
+        Mat roi = image(window); //Extract region of interest
+        vector<Point2f> locations;
+        
+        findNonZero(roi, locations); //Get all non-black pixels. All are white in our case
+        float avgX = 0.0f;
+        
+        for (int i = 0; i < locations.size(); ++i){
+            float x = locations[i].x;
+            avgX += window.x + x;
+        }
+        
+        avgX = locations.empty() ? currentX : avgX / locations.size();
+        
+        Point point(avgX, window.y + window.height * 0.5f);
+        points.push_back(point);
+        
+        //Move the window up
+        window.y -= window.height;
+        
+        //For the uppermost position
+        if (window.y < 0)
+        {
+            window.y = 0;
+            shouldBreak = true;
+        }
+        
+        //Move x position
+        window.x += (point.x - currentX);
+        
+        //Make sure the window doesn't overflow, we get an error if we try to get data outside the matrix
+        if (window.x < 0)
+            window.x = 0;
+        if (window.x + window.width >= imgSize.width)
+            window.x = imgSize.width - window.width - 1;
+        
+        if (shouldBreak)
+            break;
+    }
+    
+    return points;
 }

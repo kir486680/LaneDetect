@@ -25,7 +25,7 @@ class LaneDetector {
     /*
      Filters yellow and white colors on image
      */
-    Mat filter_only_yellow_white(Mat image);
+    Mat filter_only_yellow_white(Mat img, Mat dst);
     
     /*
      Crops region where lane is most likely to be.
@@ -44,4 +44,6 @@ class LaneDetector {
     Mat detect_edges(Mat image);
     
     Mat transformProspectives(Mat image);
+    
+    vector<Point2f> slidingWindow(Mat image, cv::Rect window);
 };
