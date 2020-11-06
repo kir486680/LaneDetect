@@ -11,6 +11,8 @@
 using namespace cv;
 using namespace std;
 
+
+
 double getAverage(vector<double> vector, int nElements) {
     
     double sum = 0;
@@ -33,44 +35,93 @@ double getAverage(vector<double> vector, int nElements) {
     return (double)sum/size;
 }
 
-Mat LaneDetector::detect_lane(Mat image) {
-    Mat org, invertedPerspectiveMatrix, perspectiveImg;
-    auto data = transformProspectives(image);
-    perspectiveImg = get<0>(data);
-    invertedPerspectiveMatrix = get<0>(data);
-    cout<<invertedPerspectiveMatrix<<endl;
-    Mat processed= filter_only_yellow_white(image, perspectiveImg);
+Mat LaneDetector::detect_lane(Mat org) {
+
+    
+    //Prepare matrix for transform and get the warped image
+    Mat perspectiveMatrix = getPerspectiveTransform(srcVertices, dstVertices);
+    Mat dst(480, 640, CV_8UC3); //Destination for warped image
+    
+    //For transforming back into original image space
+    Mat invertedPerspectiveMatrix;
+    invert(perspectiveMatrix, invertedPerspectiveMatrix);
+    
+    Mat img; //Working image
+    warpPerspective(org, dst, perspectiveMatrix, dst.size(), INTER_LINEAR, BORDER_CONSTANT);
+    
+    //Convert to gray
+    cvtColor(dst, img, COLOR_RGB2GRAY);
+    
+    //Extract yellow and white info
+    Mat maskYellow, maskWhite;
+    
+    inRange(img, Scalar(20, 100, 100), Scalar(30, 255, 255), maskYellow);
+    inRange(img, Scalar(150, 150, 150), Scalar(255, 255, 255), maskWhite);
+    
+    Mat mask, processed;
+    bitwise_or(maskYellow, maskWhite, mask); //Combine the two masks
+    bitwise_and(img, mask, processed); //Extrect what matches
+    
+    
+    //Blur the image a bit so that gaps are smoother
+    const Size kernelSize = Size(9, 9);
+    GaussianBlur(processed, processed, kernelSize, 0);
+    
+    //Try to fill the gaps
+    Mat kernel = Mat::ones(15, 15, CV_8U);
+    dilate(processed, processed, kernel);
+    erode(processed, processed, kernel);
+    morphologyEx(processed, processed, MORPH_CLOSE, kernel);
+    
+    //Keep only what's above 150 value, other is then black
+    const int thresholdVal = 150;
+    threshold(processed, processed, thresholdVal, 255, THRESH_BINARY);
+    //Might be optimized with adaptive thresh
+    
+    
+    //Get points for left sliding window. Optimize by using a histogram for the starting X value
     vector<Point2f> pts = slidingWindow(processed, Rect(0, 420, 120, 60));
     vector<Point> allPts; //Used for the end polygon at the end.
+    
+    /* potential hist calculation for optimization. Should be moved above slidingWindow call and used for determining X value
+     Mat hist;
+     int histSize = 256;
+     float range[] = { 0, 256 }; //the upper boundary is exclusive
+     const float* histRange = { range };
+     calcHist(&processed, 1, 0, Mat(), hist, 1, &histSize, &histRange, true);
+     */
+    
     vector<Point2f> outPts;
     perspectiveTransform(pts, outPts, invertedPerspectiveMatrix); //Transform points back into original image space
+    
     //Draw the points onto the out image
     for (int i = 0; i < outPts.size() - 1; ++i)
     {
         line(org, outPts[i], outPts[i + 1], Scalar(255, 0, 0), 3);
         allPts.push_back(Point(outPts[i].x, outPts[i].y));
     }
-
+    
     allPts.push_back(Point(outPts[outPts.size() - 1].x, outPts[outPts.size() - 1].y));
-
+    
     Mat out;
     cvtColor(processed, out, COLOR_GRAY2BGR); //Conver the processing image to color so that we can visualise the lines
+    
     for (int i = 0; i < pts.size() - 1; ++i) //Draw a line on the processed image
-    line(out, pts[i], pts[i + 1], Scalar(255, 0, 0));
-
+        line(out, pts[i], pts[i + 1], Scalar(255, 0, 0));
+    
     //Sliding window for the right side
     pts = slidingWindow(processed, Rect(520, 420, 120, 60));
     perspectiveTransform(pts, outPts, invertedPerspectiveMatrix);
-
+    
     //Draw the other lane and append points
     for (int i = 0; i < outPts.size() - 1; ++i)
     {
         line(org, outPts[i], outPts[i + 1], Scalar(0, 0, 255), 3);
         allPts.push_back(Point(outPts[outPts.size() - i - 1].x, outPts[outPts.size() - i - 1].y));
     }
-
+    
     allPts.push_back(Point(outPts[0].x - (outPts.size() - 1) , outPts[0].y));
-
+    
     for (int i = 0; i < pts.size() - 1; ++i)
         line(out, pts[i], pts[i + 1], Scalar(0, 0, 255));
 

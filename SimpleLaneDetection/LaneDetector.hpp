@@ -15,13 +15,27 @@ class LaneDetector {
     
     public:
     
+    //Constructor
+    LaneDetector(){
+        srcVertices[0] = cv::Point(700, 605);
+        srcVertices[1] = cv::Point(890, 605);
+        srcVertices[2] = cv::Point(1760, 1030);
+        srcVertices[3] = cv::Point(20, 1030);
+
+        dstVertices[0] = cv::Point(0, 0);
+        dstVertices[1] = cv::Point(640, 0);
+        dstVertices[2] = cv::Point(640, 480);
+        dstVertices[3] = cv::Point(0, 480);
+    }
+    
     /*
      Returns image with lane overlay
      */
     Mat detect_lane(Mat image);
     
     private:
-    
+    Point2f srcVertices[4];
+    Point2f dstVertices[4];
     /*
      Filters yellow and white colors on image
      */
@@ -46,4 +60,5 @@ class LaneDetector {
     tuple<Mat, Mat> transformProspectives(Mat image);
     
     vector<Point2f> slidingWindow(Mat image, cv::Rect window);
+
 };
