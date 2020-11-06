@@ -43,7 +43,7 @@ class LaneDetector {
      */
     Mat detect_edges(Mat image);
     
-    Mat transformProspectives(Mat image);
+    tuple<Mat, Mat> transformProspectives(Mat image);
     
     vector<Point2f> slidingWindow(Mat image, cv::Rect window);
 };
